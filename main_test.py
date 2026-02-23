@@ -12,10 +12,23 @@ def load_result():
 
 
 def extract_addresses(content, label):
-    """Find all hex addresses on lines containing the label (case-insensitive)."""
+    """Find all hex addresses in a section matching the label.
+    A section starts at a line containing the label and continues
+    until a blank line or next section header (--- or ===)."""
     addrs = []
-    for line in content.split('\n'):
+    lines = content.split('\n')
+    in_section = False
+    for line in lines:
         if label.lower() in line.lower():
+            in_section = True
+            # also grab any address on the header line itself
+            found = re.findall(r'0x[0-9a-fA-F]+', line)
+            addrs.extend(found)
+            continue
+        if in_section:
+            if line.strip() == '' or line.strip().startswith('---') or line.strip().startswith('==='):
+                in_section = False
+                continue
             found = re.findall(r'0x[0-9a-fA-F]+', line)
             addrs.extend(found)
     return [int(a, 16) for a in addrs]
