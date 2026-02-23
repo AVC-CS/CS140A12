@@ -9,58 +9,66 @@ static int staticVar = 200;    // static initialized (DATA)
 
 // BSS segment (uninitialized data, part of DATA)
 int uninitGlobal;              // uninitialized global (BSS)
+int uninitGlobal2;             // second uninitialized global (BSS)
+
+// Stack check: compare address from main (parent) vs child function
+void checkStack(int* parentAddr) {
+    int childVar = 99;
+    cout << "--- STACK SEGMENT (Cross-function comparison) ---" << endl;
+    cout << "main local addr (parent frame) : " << (void*)parentAddr << endl;
+    cout << "param addr (child frame)       : " << (void*)&parentAddr << endl;
+    cout << "child local addr (child frame) : " << (void*)&childVar << endl;
+    cout << "Stack grows: "
+         << (parentAddr > &childVar ? "DOWN (parent frame > child frame)" : "UP")
+         << endl;
+    cout << endl;
+}
 
 int main() {
 
-    // STACK segment - local variables
-    int stackVar1 = 10;
-    int stackVar2 = 20;
-    char stackArr[64];
+    // STACK segment - local variable in main
+    int mainVar = 10;
 
-    // HEAP segment - dynamic allocation
-    int* heapVar1 = new int(42);
-    int* heapVar2 = (int*)malloc(sizeof(int));
-    *heapVar2 = 99;
+    // HEAP segment - dynamic allocation (malloc, larger sizes)
+    // int* heapVar1 = new int(42);   // new may not allocate sequentially
+    // int* heapVar2 = new int(99);
+    char* heapVar1 = (char*)malloc(1024);
+    char* heapVar2 = (char*)malloc(1024);
 
     cout << "=== MEMORY SEGMENT BOUNDARIES ===" << endl;
     cout << endl;
 
     // TEXT segment (code/instructions)
     cout << "--- TEXT SEGMENT (Code) ---" << endl;
-    cout << "Address of main()      : " << (void*)&main << endl;
-    cout << "Address of a function  : " << (void*)&exit << endl;
+    cout << "Address of main()       : " << (void*)&main << endl;
+    cout << "Address of checkStack() : " << (void*)&checkStack << endl;
     cout << endl;
 
     // DATA segment (initialized globals)
     cout << "--- DATA SEGMENT (Initialized Globals) ---" << endl;
-    cout << "globalVar  addr : " << (void*)&globalVar  
+    cout << "globalVar  addr : " << (void*)&globalVar
          << " value: " << globalVar << endl;
-    cout << "staticVar  addr : " << (void*)&staticVar  
+    cout << "staticVar  addr : " << (void*)&staticVar
          << " value: " << staticVar << endl;
     cout << endl;
 
     // BSS segment (uninitialized globals)
     cout << "--- BSS SEGMENT (Uninitialized Globals) ---" << endl;
-    cout << "uninitGlobal addr: " << (void*)&uninitGlobal 
+    cout << "uninitGlobal  addr: " << (void*)&uninitGlobal
          << " value: " << uninitGlobal << endl;
+    cout << "uninitGlobal2 addr: " << (void*)&uninitGlobal2
+         << " value: " << uninitGlobal2 << endl;
     cout << endl;
 
-    // STACK segment (local variables - grows DOWN)
-    cout << "--- STACK SEGMENT (Local Variables) ---" << endl;
-    cout << "stackVar1 addr : " << (void*)&stackVar1 << endl;
-    cout << "stackVar2 addr : " << (void*)&stackVar2 << endl;
-    cout << "stackArr  addr : " << (void*)&stackArr  << endl;
-    cout << "Stack grows: " 
-         << (&stackVar1 > &stackVar2 ? "DOWN (higher→lower)" : "UP") 
-         << endl;
-    cout << endl;
+    // STACK segment - cross-function comparison (guaranteed)
+    checkStack(&mainVar);
 
     // HEAP segment (dynamic - grows UP)
     cout << "--- HEAP SEGMENT (Dynamic Allocation) ---" << endl;
     cout << "heapVar1 addr  : " << (void*)heapVar1 << endl;
     cout << "heapVar2 addr  : " << (void*)heapVar2 << endl;
     cout << "Heap grows: "
-         << (heapVar2 > heapVar1 ? "UP (lower→higher)" : "DOWN")
+         << (heapVar2 > heapVar1 ? "UP (lower to higher)" : "DOWN")
          << endl;
     cout << endl;
 
@@ -70,10 +78,10 @@ int main() {
     cout << "DATA           : " << (void*)&globalVar  << endl;
     cout << "BSS            : " << (void*)&uninitGlobal << endl;
     cout << "HEAP           : " << (void*)heapVar1   << endl;
-    cout << "STACK (highest): " << (void*)&stackVar1 << endl;
+    cout << "STACK (highest): " << (void*)&mainVar   << endl;
 
     // cleanup
-    delete heapVar1;
+    free(heapVar1);
     free(heapVar2);
 
     return 0;
