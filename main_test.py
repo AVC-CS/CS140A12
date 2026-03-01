@@ -19,7 +19,7 @@ def extract_addresses(content, label):
     lines = content.split('\n')
     in_section = False
     for line in lines:
-        if label.lower() in line.lower():
+        if label.lower() in line.lower() and line.strip().startswith('---'):
             in_section = True
             # also grab any address on the header line itself
             found = re.findall(r'0x[0-9a-fA-F]+', line)

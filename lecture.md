@@ -21,14 +21,14 @@ One program can spawn multiple processes. Each process gets its own isolated mem
 High Address  0x7fffffff
 
 |            |
-|   STACK    |   ↓ grows down (local vars, function frames)
-|     ↓      |
+|   STACK    |   grows down (local vars, function frames)
+|     v      |
 |            |
 |  (free     |
 |   space)   |
 |            |
-|     ↑      |
-|   HEAP     |   ↑ grows up (new, malloc)
+|     ^      |
+|   HEAP     |   grows up (malloc)
 |            |
 |   BSS      |   uninitialized globals (zeroed by OS)
 |            |
@@ -47,7 +47,8 @@ Low Address   0x00000000
 
 ```
 // TEXT: function addresses
-cout << (void*)&main;    // prints a TEXT address
+cout << (void*)&main;         // prints a TEXT address
+cout << (void*)&checkStack;   // another TEXT address
 ```
 
 ### DATA Segment (Initialized Globals)
@@ -65,18 +66,20 @@ static int staticVar = 200; // DATA segment
 - Saves space in the executable file (no need to store zeros)
 
 ```
-int uninitGlobal;  // BSS segment — value is 0
+int uninitGlobal;   // BSS segment — value is 0
+int uninitGlobal2;  // BSS segment — also 0
 ```
 
 ### HEAP Segment (Dynamic Memory)
-- Memory allocated at runtime with `new` or `malloc`
+- Memory allocated at runtime with `malloc`
 - Grows **upward** toward higher addresses
-- You must free it (`delete` / `free`) or you leak memory
+- You must free it with `free()` or you leak memory
+- Use `malloc` with larger sizes (e.g., 1024) — `new` with small sizes may not allocate sequentially on all platforms
 
 ```
-int* p1 = new int(42);          // HEAP
-int* p2 = (int*)malloc(sizeof(int)); // HEAP
-// p2 has a HIGHER address than p1 (heap grows up)
+char* p1 = (char*)malloc(1024);  // HEAP — first allocation
+char* p2 = (char*)malloc(1024);  // HEAP — higher address (heap grows up)
+// p2 > p1
 ```
 
 ### STACK Segment (Local Variables)
@@ -84,10 +87,34 @@ int* p2 = (int*)malloc(sizeof(int)); // HEAP
 - Grows **downward** toward lower addresses
 - Automatically managed (created on function entry, destroyed on exit)
 
+**Important**: comparing two local variables within the **same function** does NOT reliably show stack growth — the compiler can reorder variables within a single stack frame.
+
+To demonstrate stack grows down, you must compare across **two function calls**:
+
 ```
-int stackVar1 = 10;  // STACK (higher address)
-int stackVar2 = 20;  // STACK (lower address — stack grew down)
+void checkStack(int* parentAddr) {
+    int childVar = 0;
+    // parentAddr points to main's local var (parent frame — higher)
+    // &childVar is in this function's frame (child frame — lower)
+    cout << "Parent frame: " << (void*)parentAddr << endl;
+    cout << "Param addr:   " << (void*)&parentAddr << endl;
+    cout << "Child local:  " << (void*)&childVar << endl;
+    cout << "Stack grows: "
+         << (parentAddr > &childVar ? "DOWN" : "UP") << endl;
+}
+
+int main() {
+    int myVar = 10;
+    checkStack(&myVar);  // pass address from parent frame
+}
 ```
+
+The function prints 3 stack addresses:
+- `parentAddr` value — points to main's local var (parent frame, higher address)
+- `&parentAddr` — parameter's own address (child frame, lower address)
+- `&childVar` — local var in child function (child frame, lower address)
+
+Parent frame address is always higher than child frame address — this is guaranteed.
 
 ## 3. Walk-through of main.cpp
 
@@ -97,32 +124,41 @@ The demo program `main.cpp` declares variables in all 5 segments and prints thei
 - `int globalVar = 100;` — DATA segment (initialized global)
 - `static int staticVar = 200;` — DATA segment (static initialized)
 - `int uninitGlobal;` — BSS segment (uninitialized global)
+- `int uninitGlobal2;` — BSS segment (second uninitialized global)
+
+**checkStack() function:**
+- Receives address of main's local variable (parent frame)
+- Declares its own local variable (child frame)
+- Prints 3 addresses: parent value, parameter address, child local address
+- Compares parent vs child frame to prove stack grows DOWN
 
 **Inside main():**
-- `int stackVar1, stackVar2` — STACK segment (local variables)
-- `int* heapVar1 = new int(42)` — HEAP segment (dynamic allocation)
-- `int* heapVar2 = (int*)malloc(sizeof(int))` — HEAP segment
+- `int mainVar = 10;` — STACK segment (local variable, passed to checkStack)
+- `char* heapVar1 = (char*)malloc(1024)` — HEAP segment
+- `char* heapVar2 = (char*)malloc(1024)` — HEAP segment (higher address)
 
 **Output shows:**
 - TEXT addresses are the lowest (code lives at bottom)
 - DATA and BSS are above TEXT
 - HEAP addresses are above BSS and grow upward (heapVar2 > heapVar1)
-- STACK addresses are the highest and grow downward (stackVar1 > stackVar2)
+- STACK addresses are the highest and grow downward (parent frame > child frame)
 
 This matches the memory layout diagram exactly.
 
 ## 4. Student Activity
 
-Write your own C++ program that demonstrates all 5 memory segments:
+Fill in the skeleton `main.cpp` to demonstrate all 5 memory segments:
 
-- Declare at least one initialized global (DATA)
-- Declare at least one uninitialized global (BSS)
-- Declare at least two local variables (STACK)
-- Allocate at least two variables on the heap with `new` (HEAP)
-- Print the address of `main()` (TEXT)
+- Declare at least 2 initialized globals (DATA)
+- Declare at least 2 uninitialized globals (BSS)
+- Declare a local variable in main and pass its address to `checkStack()` (STACK)
+- `checkStack()` is provided — it prints 3 stack addresses (parent local, param, child local) and the growth direction
+- Allocate at least 2 heap variables with `malloc` using larger sizes like 1024 (HEAP)
+- Print 2 function addresses: `main` and `checkStack` (TEXT)
 - Print all addresses with segment labels
-- Show that stack grows down and heap grows up
-- Free all heap allocations with `delete`
+- Print `Heap grows: UP` or `DOWN` based on comparing the two heap addresses
+- Free all heap allocations with `free()`
+- Write experimental results as a comment block at the bottom of your `main.cpp`
 - Run: `./a.out > result.txt`
 
 ### How to compile and test
@@ -134,7 +170,7 @@ pytest -rP
 
 ### Grading (100 pts total)
 - Compile (20 pts): compiles with `-Wall -Wextra`
-- T1 (20 pts): `result.txt` contains all 5 segment labels
-- T2 (20 pts): `result.txt` contains hex addresses
-- T3 (20 pts): stack addresses decrease (grows down)
-- T4 (20 pts): heap addresses increase (grows up)
+- T1 (20 pts): `result.txt` contains all 5 segment labels (TEXT, DATA, BSS, STACK, HEAP)
+- T2 (20 pts): `result.txt` contains at least 2 hex addresses per segment (3 for STACK)
+- T3 (20 pts): output shows `Stack grows: DOWN` (cross-function comparison)
+- T4 (20 pts): output shows `Heap grows: UP` (sequential malloc comparison)
