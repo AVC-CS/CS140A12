@@ -1,90 +1,65 @@
 import pytest
 import os
-import re
 
 
 def load_result():
-    """Load result.txt and return its content."""
     assert os.path.exists('result.txt'), \
         "result.txt not found — run: ./a.out > result.txt"
-    with open('result.txt', 'r') as f:
+    with open('result.txt') as f:
         return f.read()
 
 
-def extract_addresses(content, label):
-    """Find all hex addresses in a section matching the label.
-    A section starts at a line containing the label and continues
-    until a blank line or next section header (--- or ===)."""
-    addrs = []
-    lines = content.split('\n')
-    in_section = False
-    for line in lines:
-        if label.lower() in line.lower() and line.strip().startswith('---'):
-            in_section = True
-            # also grab any address on the header line itself
-            found = re.findall(r'0x[0-9a-fA-F]+', line)
-            addrs.extend(found)
-            continue
-        if in_section:
-            if line.strip() == '' or line.strip().startswith('---') or line.strip().startswith('==='):
-                in_section = False
-                continue
-            found = re.findall(r'0x[0-9a-fA-F]+', line)
-            addrs.extend(found)
-    return [int(a, 16) for a in addrs]
+def parse(content):
+    """Parse structured output into {LABEL: [addresses]}.
+    Each line must start with a segment label followed by hex addresses:
+        TEXT 0x... 0x...
+        STACK 0x... 0x... 0x...
+    """
+    LABELS = {'TEXT', 'DATA', 'BSS', 'STACK', 'HEAP'}
+    result = {}
+    for line in content.splitlines():
+        tokens = line.split()
+        if tokens and tokens[0] in LABELS:
+            result[tokens[0]] = [int(t, 16) for t in tokens[1:]]
+    return result
+
+
+@pytest.fixture
+def segments():
+    return parse(load_result())
 
 
 @pytest.mark.T1
-def test_segment_labels():
-    """T1: result.txt contains all 5 segment labels"""
-    content = load_result()
-    print(f"Output length: {len(content)} chars")
-
+def test_segment_labels(segments):
+    """T1: all 5 segment labels present in output"""
     for label in ['TEXT', 'DATA', 'BSS', 'STACK', 'HEAP']:
-        found = label.lower() in content.lower()
-        assert found, f"Missing segment label: {label}"
-        print(f"PASS: found '{label}' in output")
-
-    print("PASS: all 5 segment labels present")
+        assert label in segments, f"Missing segment: {label}"
 
 
 @pytest.mark.T2
-def test_hex_addresses():
-    """T2: result.txt contains at least 2 hex addresses per segment"""
-    content = load_result()
-
+def test_hex_addresses(segments):
+    """T2: each segment has at least 2 addresses"""
     for label in ['TEXT', 'DATA', 'BSS', 'STACK', 'HEAP']:
-        addrs = extract_addresses(content, label)
+        addrs = segments.get(label, [])
         assert len(addrs) >= 2, \
-            f"{label}: expected at least 2 hex addresses, found {len(addrs)}"
-        print(f"PASS: {label} has {len(addrs)} addresses: {[hex(a) for a in addrs]}")
-
-    print("PASS: all segments have at least 2 hex addresses")
+            f"{label}: need 2+ addresses, got {len(addrs)}"
 
 
 @pytest.mark.T3
-def test_stack_grows_down():
-    """T3: stack addresses decrease (first > last) proving stack grows down"""
-    content = load_result()
-    addrs = extract_addresses(content, 'STACK')
+def test_stack_grows_down(segments):
+    """T3: stack grows down — parent frame address > child frame address"""
+    addrs = segments.get('STACK', [])
     assert len(addrs) >= 3, \
-        f"STACK: need at least 3 addresses (main local, param, function local), found {len(addrs)}"
-    print(f"STACK addresses: {[hex(a) for a in addrs]}")
-
-    assert addrs[0] > addrs[-1], \
-        f"Stack should grow down: first addr {hex(addrs[0])} should be > last addr {hex(addrs[-1])}"
-    print(f"PASS: stack grows down — {hex(addrs[0])} > {hex(addrs[-1])} (gap: {addrs[0] - addrs[-1]} bytes)")
+        f"STACK: need 3 addresses (parent, param, child), got {len(addrs)}"
+    assert addrs[0] > addrs[2], \
+        f"Stack should grow down: parent {hex(addrs[0])} > child {hex(addrs[2])}"
 
 
 @pytest.mark.T4
-def test_heap_grows_up():
-    """T4: heap addresses increase (first < last) proving heap grows up"""
-    content = load_result()
-    addrs = extract_addresses(content, 'HEAP')
+def test_heap_grows_up(segments):
+    """T4: heap grows up — first allocation address < second allocation address"""
+    addrs = segments.get('HEAP', [])
     assert len(addrs) >= 2, \
-        f"HEAP: need at least 2 addresses, found {len(addrs)}"
-    print(f"HEAP addresses: {[hex(a) for a in addrs]}")
-
-    assert addrs[0] < addrs[-1], \
-        f"Heap should grow up: first addr {hex(addrs[0])} should be < last addr {hex(addrs[-1])}"
-    print(f"PASS: heap grows up — {hex(addrs[0])} < {hex(addrs[-1])} (gap: {addrs[-1] - addrs[0]} bytes)")
+        f"HEAP: need 2 addresses, got {len(addrs)}"
+    assert addrs[0] < addrs[1], \
+        f"Heap should grow up: first {hex(addrs[0])} < second {hex(addrs[1])}"
